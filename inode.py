@@ -1,4 +1,5 @@
 from ext4Enums import ext4Enums
+import json
 class inode:
 	def parse_inode(self,inode):
 		e=ext4Enums()
@@ -103,8 +104,6 @@ class inode:
 				#print("i_mode: ", nd['i_mode'])
 				#print("Blocks current: ",blocks)
 
-
-
 			#- Indirect Blocks
 			elif d['eh_depth'] > 0: 
 				nd['ei_block']=int.from_bytes(x[0:4],byteorder='little')
@@ -117,12 +116,22 @@ class inode:
 
 				start_block=max(ei_leaf_lo,ei_leaf_hi)
 				end_block=start_block+ min(ei_leaf_lo,ei_leaf_hi)+1
-				#blocks.append(f"{start_block}-{end_block}")
+				blocks.append(f"{start_block}-{end_block}")
 
 				nd['ei_unused']=int.from_bytes(x[10:12],byteorder='little')
 
 			out_l.append(nd)
 
 		d['nodes']=out_l
+
+		#- Setting direct and indirect blocks
 		d['blocks']=blocks
+	
+		'''
+		#- TODO: Maybe better approach to validate blocks as direct/indirect in code.
+		if d['eh_depth'] ==0:
+				d['direct_blocks']=blocks
+		elif d['eh_depth'] ==0:
+				d['indirect_blocks']=blocks
+		'''
 		return d

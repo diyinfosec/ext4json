@@ -5,6 +5,11 @@ from ext4Enums import ext4Enums
 class direntry:
 	def is_valid_dentry(self,de):
 		#print(de)
+		#- Tail entry. TODO: More conditions? name_len=0 and _actual_len=8 and file_name=""
+		if(de['inode']==0 and de['file_type']=='DIR_TAIL_ENTRY' and de['rec_len']==12):
+			return True
+
+		#- File name cannot be negative or more than 255 chars
 		if(de['name_len']<=0 or de['name_len']>255):
 			return False
 
@@ -12,7 +17,7 @@ class direntry:
 		if(de['rec_len']%4 !=0):
 			return False
 
-		#- File name is empty
+		#- File name cannot be empty
 		try:
 				if(de['file_name']==''):
 					return False
@@ -20,13 +25,15 @@ class direntry:
 				if(de['file_name_hex']==''):
 					return False
 
+		#- inode cannot be 0 or negative. 
+		if(de['inode']<=0): 
+			return False
+
 		#- TODO: For now this validation needs to be done by caller:
 		#- inode exceeds total inodes in superblock
 		#- rec_len exceeds size of block
 
-		#- TODO: Maybe improve this validation to avoid silly tail entries
-		if(de['inode']<=0 and de['file_type']!='TAIL_DIR_ENTRY'):
-			return False
+
 		return True
 
 	def parse_de_block(self,de_block):

@@ -5,7 +5,7 @@ from inode import inode
 from direntry import direntry
 
 file_name='sb.bin'
-file_name='sda1'
+file_name='sda1.bin'
 
 f=open(file_name,'rb') 
 
@@ -28,15 +28,53 @@ def setup_logger(name, log_file, level=logging.INFO, formatter=logging.Formatter
 
 	return logger
 
+#==============================================
+#- FUNCTION: Get list of Dir Entry blocks
+#==============================================
+def get_block_list(buf,block_num,fp):
+		d={}
+		global block_list
+		#- Just read 60 bytes from buffer, enough to validate/process an extent tree
+		etree=buf[:60] 
+
+		d=obj_i.parse_extent_tree(etree)
+
+		#- Is it an Extent Header?
+		if(d['eh_magic']!='INVALID'):
+			print(f"Extent Tree at {block_num}")
+			#print(json.dumps(d,indent=4))
+			for x in d['blocks']:
+				y=x.split('-')
+				start_block=int(y[0])
+				end_block=int(y[1])
+				#print(start_block,"-",end_block)
+				for z in range(start_block,end_block+1):
+					fp.seek(z*ACTUAL_BLOCK_SIZE)
+					buf=fp.read(60)
+					block_num=z
+					get_block_list(buf,block_num,fp)
+		else:
+			block_list.append(block_num)
+
+		return block_list
+
 
 #====================================
-#- Actually setting up the loggers
+#- Initializing variables used here
 #====================================
+#- Logging related
 sb_logger = setup_logger('sb_logger', 'logs/superblock.json')
 bg_logger = setup_logger('bg_logger', 'logs/blockgroups.json')
 inode_logger = setup_logger('inode_logger', 'logs/inodes.json')
 de_logger = setup_logger('de_logger', 'logs/direntries.json')
 
+
+#- Objects for inode and directory entry
+obj_i=inode()
+obj_d=direntry()
+
+#- List of blocks (For extent tree processing)
+block_list=[]
 
 
 #==========================
@@ -76,8 +114,6 @@ for x in range(NUM_GDT_ENTRIES):
 #================================
 #- Reading inode table entries
 #================================
-obj_i=inode()
-obj_d=direntry()
 last_bg=len(bg_l)-1
 for bg_num,x in enumerate(bg_l):
 	#print(json.dumps(x,indent=4))
@@ -98,19 +134,37 @@ for bg_num,x in enumerate(bg_l):
 		#- Directory that is not deleted. TODO: Maybe include deleted ones?
 		if(inode['_type']=='DIRECTORY' and inode['i_dtime']==0):
 			if 'blocks' in inode['i_block']:
-				for x in inode['i_block']['blocks']:
-					y=x.split('-')
-					start_block=int(y[0])
-					end_block=int(y[1])
-					for z in range(start_block,end_block+1):
-						f.seek(ACTUAL_BLOCK_SIZE*z)
-						#print(f"Processing block {z}")
-						buf=f.read(ACTUAL_BLOCK_SIZE)
-						for de in obj_d.parse_de_block(buf):
-							#- Adding validations:
-							#- record length should not exceed the block size. 
-							#- inode number should not exceed total inodes defined in the superblock
-							if(de['rec_len']<ACTUAL_BLOCK_SIZE and de['inode']<TOTAL_INODES):
-									#print(de)
-									de_logger.info(json.dumps(de))
+				for block_range in inode['i_block']['blocks']:
+					x=block_range.split('-')
+					start_block=int(x[0])
+					end_block=int(x[1])
+
+					for y in range(start_block,end_block+1):
+						f.seek(ACTUAL_BLOCK_SIZE*y)
+						#print(f"Processing block {y}")
+						buf=f.read(60)
+
+						#- Function to get final list of blocks (after walking through the indirect blocks)
+						#print("Input is ", y)
+						block_list=[]
+						b=get_block_list(buf,y,f)
+						#print("Output from recursive function :", b)
+						#print("----------")
+
+						#- Read the damn block
+						for z in b:
+								f.seek(ACTUAL_BLOCK_SIZE*y)
+								#print(f"Processing block {z}")
+								buf=f.read(ACTUAL_BLOCK_SIZE)
+								for de in obj_d.parse_de_block(buf):
+									#- Adding validations:
+									#- record length should not exceed the block size. 
+									#- inode number should not exceed total inodes defined in the superblock
+									if(de['rec_len']<ACTUAL_BLOCK_SIZE and de['inode']<TOTAL_INODES):
+											#print(de)
+											de_logger.info(json.dumps(de))
+
+'''
+					exit()
 		
+'''
